@@ -28,21 +28,25 @@ is_whitespace(C) when C =:= 32; C =:= 9; C =:= 10; C =:= 13 -> true;
 is_whitespace(160)                                             -> true;
 is_whitespace(_)                                               -> false.
 
-is_punctuation(C) when C >= 33,  C =< 47  -> true;
-is_punctuation(C) when C >= 58,  C =< 64  -> true;
-is_punctuation(C) when C >= 91,  C =< 96  -> true;
-is_punctuation(C) when C >= 123, C =< 126 -> true;
-is_punctuation(_)                          -> false.
+is_punctuation(C) when C >= 33,      C =< 47     -> true;
+is_punctuation(C) when C >= 58,      C =< 64     -> true;
+is_punctuation(C) when C >= 91,      C =< 96     -> true;
+is_punctuation(C) when C >= 123,     C =< 126    -> true;
+is_punctuation(C) when C >= 16#00A1, C =< 16#00BF -> true;  %% Latin-1 punct: «»¡¿·§¶
+is_punctuation(C) when C >= 16#2010, C =< 16#205E -> true;  %% General Punctuation: dashes, quotes, ellipsis
+is_punctuation(C) when C >= 16#2E00, C =< 16#2E7F -> true;  %% Supplemental Punctuation
+is_punctuation(_)                                  -> false.
 
 encode_words(Words, Vocab, UnkId, MaxChars) ->
     lists:flatmap(fun(W) -> encode_word(W, Vocab, UnkId, MaxChars) end, Words).
 
 encode_word(Word, Vocab, UnkId, MaxChars) ->
     Chars = unicode:characters_to_list(Word),
-    case length(Chars) > MaxChars of
+    Len = length(Chars),
+    case Len > MaxChars of
         true -> [UnkId];
         false ->
-            case greedy(Chars, 0, length(Chars), Vocab, []) of
+            case greedy(Chars, 0, Len, Vocab, []) of
                 {ok, Ids} -> Ids;
                 error     -> [UnkId]
             end
