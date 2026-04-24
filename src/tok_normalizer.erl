@@ -56,6 +56,8 @@ is_cjk(C) when C >= 16#4E00,  C =< 16#9FFF  -> true;
 is_cjk(C) when C >= 16#3400,  C =< 16#4DBF  -> true;
 is_cjk(C) when C >= 16#20000, C =< 16#2A6DF -> true;
 is_cjk(C) when C >= 16#2A700, C =< 16#2B73F -> true;
+is_cjk(C) when C >= 16#2B740, C =< 16#2B81F -> true;
+is_cjk(C) when C >= 16#2B820, C =< 16#2CEAF -> true;
 is_cjk(C) when C >= 16#F900,  C =< 16#FAFF  -> true;
 is_cjk(C) when C >= 16#2F800, C =< 16#2FA1F -> true;
 is_cjk(_)                                    -> false.
