@@ -66,10 +66,10 @@ build_bpe(Json, Model) ->
                                        null -> -1;
                                        T    -> maps:get(T, Vocab, -1)
                                    end,
+                    PostProcessor       = maps:get(<<"post_processor">>, Json, null),
                     {PreTok, AddPrefix} = parse_pre_tokenizer_bpe(
                                             maps:get(<<"pre_tokenizer">>, Json, null)),
-                    {BosId, EosId}      = parse_bos_eos(
-                                            maps:get(<<"post_processor">>, Json, null), Vocab),
+                    {BosId, EosId}      = parse_bos_eos(PostProcessor, Vocab),
                     case parse_normalizer(maps:get(<<"normalizer">>, Json, null)) of
                         {error, _} = Err -> Err;
                         {ok, Norm}       ->
@@ -78,7 +78,7 @@ build_bpe(Json, Model) ->
                                 vocab            => Vocab,
                                 ids_to_tokens    => IdsToTokens,
                                 merges           => MergeRanks,
-                                special_tokens   => extract_special_tokens(Vocab),
+                                special_tokens   => extract_bpe_special_tokens(PostProcessor, Vocab),
                                 normalizer       => Norm,
                                 pre_tokenizer    => PreTok,
                                 add_prefix_space => AddPrefix,
@@ -122,9 +122,9 @@ parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
                    [First | _] -> maps:get(First, Vocab, none);
                    []          -> none
                end,
-    EosId    = case lists:reverse(SpecToks) of
-                   [Last | _] -> maps:get(Last, Vocab, none);
-                   []         -> none
+    EosId    = case length(SpecToks) >= 2 of
+                   true  -> maps:get(lists:last(SpecToks), Vocab, none);
+                   false -> none
                end,
     {BosId, EosId};
 parse_bos_eos(_, _Vocab) ->
@@ -143,6 +143,14 @@ strip_type_suffix(Token) ->
 extract_special_tokens(Vocab) ->
     Keys = [<<"[PAD]">>, <<"[UNK]">>, <<"[CLS]">>, <<"[SEP]">>, <<"[MASK]">>],
     maps:filter(fun(K, _) -> lists:member(K, Keys) end, Vocab).
+
+extract_bpe_special_tokens(null, _Vocab) ->
+    #{};
+extract_bpe_special_tokens(#{<<"special_tokens">> := SpecMap}, Vocab) when is_map(SpecMap) ->
+    Keys = maps:keys(SpecMap),
+    maps:filter(fun(K, _) -> lists:member(K, Keys) end, Vocab);
+extract_bpe_special_tokens(_, _Vocab) ->
+    #{}.
 
 parse_normalizer(null) ->
     {ok, #{clean_text => false, handle_chinese_chars => false,
