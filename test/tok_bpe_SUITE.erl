@@ -4,10 +4,12 @@
          byte_to_unicode_space/1,
          byte_to_unicode_printable/1,
          byte_to_unicode_control/1,
+         byte_to_unicode_high/1,
          unicode_to_byte_roundtrip/1,
          bytelevel_hello_world/1,
          bytelevel_empty/1,
          bytelevel_prefix_space/1,
+         bytelevel_decode_basic/1,
          metaspace_hello_world/1,
          metaspace_add_prefix/1,
          metaspace_empty/1]).
@@ -18,10 +20,12 @@ all() -> [
     byte_to_unicode_space,
     byte_to_unicode_printable,
     byte_to_unicode_control,
+    byte_to_unicode_high,
     unicode_to_byte_roundtrip,
     bytelevel_hello_world,
     bytelevel_empty,
     bytelevel_prefix_space,
+    bytelevel_decode_basic,
     metaspace_hello_world,
     metaspace_add_prefix,
     metaspace_empty
@@ -40,6 +44,11 @@ byte_to_unicode_control(_Config) ->
     257 = tok_bpe:byte_to_unicode(1),
     289 = tok_bpe:byte_to_unicode(127).
 
+byte_to_unicode_high(_Config) ->
+    290 = tok_bpe:byte_to_unicode(128),
+    322 = tok_bpe:byte_to_unicode(160),
+    323 = tok_bpe:byte_to_unicode(173).
+
 unicode_to_byte_roundtrip(_Config) ->
     [B = tok_bpe:unicode_to_byte(tok_bpe:byte_to_unicode(B)) || B <- lists:seq(0, 255)],
     ok.
@@ -56,6 +65,11 @@ bytelevel_empty(_Config) ->
 
 bytelevel_prefix_space(_Config) ->
     [<<288/utf8, "Hello">>] = tok_bpe:pre_tokenize(bytelevel, <<" Hello">>).
+
+bytelevel_decode_basic(_Config) ->
+    %% Ġworld (Ġ=288=space) decodes back to raw bytes " world"
+    <<32, 119, 111, 114, 108, 100>> =
+        tok_bpe:bytelevel_decode(<<288/utf8, "world">>).
 
 metaspace_hello_world(_Config) ->
     Words = tok_bpe:pre_tokenize({metaspace, false}, <<"Hello world">>),
