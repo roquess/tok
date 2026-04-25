@@ -5,12 +5,13 @@
          encode_truncates/1,
          encode_batch/1,
          decode_removes_specials/1,
-         vocab_size/1]).
+         vocab_size/1,
+         fixture_replay/1]).
 
-suite() -> [{timetrap, {seconds, 10}}].
+suite() -> [{timetrap, {seconds, 30}}].
 
 all() -> [encode_hello_world, encode_truncates, encode_batch,
-          decode_removes_specials, vocab_size].
+          decode_removes_specials, vocab_size, fixture_replay].
 
 encode_hello_world(Config) ->
     DataDir = ?config(data_dir, Config),
@@ -52,3 +53,23 @@ vocab_size(Config) ->
     DataDir = ?config(data_dir, Config),
     {ok, Tok} = tok:load(filename:join(DataDir, "minimal_tokenizer.json")),
     7 = tok:vocab_size(Tok).
+
+fixture_replay(Config) ->
+    DataDir = ?config(data_dir, Config),
+    TokPath  = filename:join([DataDir, "bert-base-multilingual-cased", "tokenizer.json"]),
+    {ok, Tok} = tok:load(TokPath),
+    CasesPath = filename:join(DataDir, "wordpiece_cases.json"),
+    {ok, Bin}  = file:read_file(CasesPath),
+    {ok, Cases} = thoas:decode(Bin),
+    lists:foreach(fun(Case) ->
+        Text     = maps:get(<<"text">>, Case),
+        Expected = maps:get(<<"input_ids">>, Case),
+        {IdsBin, _Mask, _Type} = tok:encode(Tok, Text),
+        Got = [Id || <<Id:32/signed-little>> <= IdsBin],
+        case Got =:= Expected of
+            true  -> ok;
+            false ->
+                ct:fail("Mismatch for ~p~nExpected: ~p~nGot:      ~p",
+                        [Text, lists:sublist(Expected, 10), lists:sublist(Got, 10)])
+        end
+    end, Cases).
