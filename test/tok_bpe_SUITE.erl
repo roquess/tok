@@ -16,7 +16,11 @@
          encode_word_exact_match/1,
          encode_word_merges_applied/1,
          encode_word_byte_fallback/1,
-         encode_word_no_fallback_unk/1]).
+         encode_word_no_fallback_unk/1,
+         encode_bpe_bytelevel_integration/1,
+         encode_bpe_metaspace_with_bos_eos/1,
+         decode_bpe_bytelevel/1,
+         decode_bpe_metaspace/1]).
 
 suite() -> [{timetrap, {seconds, 30}}].
 
@@ -36,7 +40,11 @@ all() -> [
     encode_word_exact_match,
     encode_word_merges_applied,
     encode_word_byte_fallback,
-    encode_word_no_fallback_unk
+    encode_word_no_fallback_unk,
+    encode_bpe_bytelevel_integration,
+    encode_bpe_metaspace_with_bos_eos,
+    decode_bpe_bytelevel,
+    decode_bpe_metaspace
 ].
 
 byte_to_unicode_space(_Config) ->
@@ -116,3 +124,63 @@ encode_word_no_fallback_unk(_Config) ->
     Vocab  = #{<<"a">> => 1},
     Merges = #{},
     [-1] = tok_bpe:encode_word(<<"b">>, Merges, Vocab, false).
+
+encode_bpe_bytelevel_integration(_Config) ->
+    Vocab  = #{<<"H">> => 1, <<"e">> => 2, <<"l">> => 3, <<"o">> => 4,
+               <<"He">> => 5, <<"ll">> => 6, <<"Hell">> => 7, <<"Hello">> => 8,
+               <<"Ġ"/utf8>> => 9, <<"w">> => 10, <<"r">> => 11, <<"d">> => 12,
+               <<"Ġworld"/utf8>> => 13},
+    Merges = #{<<"H e">> => 0, <<"l l">> => 1, <<"He ll">> => 2,
+               <<"Hell o">> => 3, <<"Ġ world"/utf8>> => 4},
+    Tok = #{type => bpe, vocab => Vocab,
+            ids_to_tokens => maps:fold(fun(K,V,A) -> A#{V=>K} end, #{}, Vocab),
+            merges => Merges, special_tokens => #{},
+            normalizer => #{clean_text => false, handle_chinese_chars => false,
+                            strip_accents => false, lowercase => false},
+            pre_tokenizer => bytelevel, add_prefix_space => false,
+            byte_fallback => false, max_length => 8, pad_id => 0,
+            unk_id => -1, bos_id => none, eos_id => none},
+    {IdsBin, MaskBin, TypeBin} = tok:encode(Tok, <<"Hello world">>),
+    %% Expected: [8, 13, 0, 0, 0, 0, 0, 0] padded to max_length=8
+    <<8:32/signed-little,  13:32/signed-little, 0:32/signed-little,
+      0:32/signed-little,  0:32/signed-little,  0:32/signed-little,
+      0:32/signed-little,  0:32/signed-little>>  = IdsBin,
+    <<1:32/signed-little, 1:32/signed-little, 0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little, 0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>>   = MaskBin,
+    <<0:32/signed-little, 0:32/signed-little, 0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little, 0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>>   = TypeBin.
+
+encode_bpe_metaspace_with_bos_eos(_Config) ->
+    Vocab  = #{<<"<unk>">> => 0, <<"<s>">> => 1, <<"</s>">> => 2,
+               <<"▁"/utf8>> => 3, <<"H">> => 4, <<"e">> => 5, <<"l">> => 6,
+               <<"o">> => 7, <<"▁H"/utf8>> => 8, <<"▁He"/utf8>> => 9,
+               <<"▁Hell"/utf8>> => 10, <<"▁Hello"/utf8>> => 11},
+    Merges = #{<<"▁ H"/utf8>> => 0, <<"▁H e"/utf8>> => 1,
+               <<"▁He ll"/utf8>> => 2, <<"▁Hell o"/utf8>> => 3},
+    Tok = #{type => bpe, vocab => Vocab,
+            ids_to_tokens => maps:fold(fun(K,V,A) -> A#{V=>K} end, #{}, Vocab),
+            merges => Merges, special_tokens => #{<<"<s>">> => 1, <<"</s>">> => 2},
+            normalizer => #{clean_text => false, handle_chinese_chars => false,
+                            strip_accents => false, lowercase => false},
+            pre_tokenizer => metaspace, add_prefix_space => true,
+            byte_fallback => true, max_length => 8, pad_id => 0,
+            unk_id => 0, bos_id => 1, eos_id => 2},
+    {IdsBin, _MaskBin, _TypeBin} = tok:encode(Tok, <<"Hello">>),
+    %% Expected: [1(BOS), 11(▁Hello), 2(EOS), 0, 0, 0, 0, 0]
+    <<1:32/signed-little, 11:32/signed-little, 2:32/signed-little,
+      0:32/signed-little, 0:32/signed-little,  0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>>  = IdsBin.
+
+decode_bpe_bytelevel(_Config) ->
+    IdsToTokens = #{8 => <<"Hello">>, 13 => <<"Ġworld"/utf8>>},
+    Tok = #{type => bpe, pre_tokenizer => bytelevel,
+            ids_to_tokens => IdsToTokens, special_tokens => #{}},
+    <<"Hello world">> = tok:decode(Tok, [8, 13]).
+
+decode_bpe_metaspace(_Config) ->
+    IdsToTokens = #{11 => <<"▁Hello"/utf8>>, 20 => <<"▁world"/utf8>>},
+    Tok = #{type => bpe, pre_tokenizer => metaspace,
+            ids_to_tokens => IdsToTokens, special_tokens => #{}},
+    <<"Hello world">> = tok:decode(Tok, [11, 20]).

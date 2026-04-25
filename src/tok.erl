@@ -21,19 +21,58 @@ encode(#{type := wordpiece,
     Truncated   = lists:sublist(ContentIds, MaxLen - 2),
     AllIds      = [ClsId | Truncated] ++ [SepId],
     build_output(AllIds, MaxLen, PadId);
-encode(#{type := bpe}, _Text) ->
-    error({not_implemented, bpe}).
+encode(#{type := bpe,
+         vocab := Vocab, merges := MergeRanks, normalizer := Norm,
+         pre_tokenizer := PreTok, add_prefix_space := AddPrefix,
+         byte_fallback := ByteFallback, max_length := MaxLen,
+         pad_id := PadId, unk_id := UnkId, bos_id := BosId, eos_id := EosId}, Text) ->
+    Normalized = tok_normalizer:normalize(Norm, Text),
+    PreTokSpec = case PreTok of
+                     bytelevel -> bytelevel;
+                     metaspace -> {metaspace, AddPrefix}
+                 end,
+    Words      = tok_bpe:pre_tokenize(PreTokSpec, Normalized),
+    RawIds     = lists:flatmap(
+                   fun(W) -> tok_bpe:encode_word(W, MergeRanks, Vocab, ByteFallback) end,
+                   Words),
+    ContentIds = [case Id of -1 -> UnkId; _ -> Id end || Id <- RawIds],
+    BosIds     = case BosId of none -> []; BosI -> [BosI] end,
+    EosIds     = case EosId of none -> []; EosI -> [EosI] end,
+    ExtraLen   = length(BosIds) + length(EosIds),
+    Truncated  = lists:sublist(ContentIds, MaxLen - ExtraLen),
+    AllIds     = BosIds ++ Truncated ++ EosIds,
+    build_output(AllIds, MaxLen, PadId).
 
 -spec encode_batch(tokenizer(), [binary()]) -> [{binary(), binary(), binary()}].
 encode_batch(Tok, Texts) ->
     [encode(Tok, T) || T <- Texts].
 
 -spec decode(tokenizer(), [integer()]) -> binary().
-decode(#{ids_to_tokens := IdsToTokens, special_tokens := SpecialTokens}, Ids) ->
+decode(#{type := wordpiece,
+         ids_to_tokens := IdsToTokens, special_tokens := SpecialTokens}, Ids) ->
     SpecialIds = sets:from_list(maps:values(SpecialTokens)),
     Tokens = [maps:get(Id, IdsToTokens, <<"[UNK]">>) || Id <- Ids,
               not sets:is_element(Id, SpecialIds)],
-    join_subwords(Tokens).
+    join_subwords(Tokens);
+
+decode(#{type := bpe, pre_tokenizer := bytelevel,
+         ids_to_tokens := IdsToTokens, special_tokens := SpecialTokens}, Ids) ->
+    SpecialIds = sets:from_list(maps:values(SpecialTokens)),
+    Tokens = [maps:get(Id, IdsToTokens, <<>>) || Id <- Ids,
+              not sets:is_element(Id, SpecialIds)],
+    tok_bpe:bytelevel_decode(iolist_to_binary(Tokens));
+
+decode(#{type := bpe, pre_tokenizer := metaspace,
+         ids_to_tokens := IdsToTokens, special_tokens := SpecialTokens}, Ids) ->
+    SpecialIds = sets:from_list(maps:values(SpecialTokens)),
+    Tokens = [maps:get(Id, IdsToTokens, <<>>) || Id <- Ids,
+              not sets:is_element(Id, SpecialIds)],
+    Concat = iolist_to_binary(Tokens),
+    Result = binary:replace(Concat, <<"▁"/utf8>>, <<" ">>, [global]),
+    case Result of
+        <<" ", Rest/binary>> -> Rest;
+        _                    -> Result
+    end.
 
 -spec vocab_size(tokenizer()) -> integer().
 vocab_size(#{vocab := Vocab}) -> maps:size(Vocab).
