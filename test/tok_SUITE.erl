@@ -56,6 +56,7 @@ vocab_size(Config) ->
 
 fixture_replay(Config) ->
     DataDir = ?config(data_dir, Config),
+    %% Directory name must match MODEL constant in test/generate.py
     TokPath  = filename:join([DataDir, "bert-base-multilingual-cased", "tokenizer.json"]),
     {ok, Tok} = tok:load(TokPath),
     CasesPath = filename:join(DataDir, "wordpiece_cases.json"),

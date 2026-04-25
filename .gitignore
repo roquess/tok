@@ -1,1 +1,3 @@
 _build/
+erl_crash.dump
+test/tok_SUITE_data/bert-base-multilingual-cased/vocab.txt
