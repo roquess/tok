@@ -16,8 +16,9 @@ build(Json) ->
         error         -> {error, {missing_field, <<"model">>}};
         {ok, Model}   ->
             case maps:find(<<"type">>, Model) of
-                error       -> {error, {missing_field, <<"model.type">>}};
+                error                -> {error, {missing_field, <<"model.type">>}};
                 {ok, <<"WordPiece">>} -> build_wordpiece(Json, Model);
+                {ok, <<"BPE">>}      -> build_bpe(Json, Model);
                 {ok, T}              -> {error, {unsupported_tokenizer, T}}
             end
     end.
@@ -49,6 +50,96 @@ build_wordpiece(Json, Model) ->
             end
     end.
 
+build_bpe(Json, Model) ->
+    case maps:find(<<"vocab">>, Model) of
+        error          -> {error, {missing_field, <<"model.vocab">>}};
+        {ok, VocabMap} ->
+            case maps:find(<<"merges">>, Model) of
+                error           -> {error, {missing_field, <<"model.merges">>}};
+                {ok, MergeList} ->
+                    Vocab        = VocabMap,
+                    IdsToTokens  = maps:fold(fun(T, Id, A) -> A#{Id => T} end, #{}, Vocab),
+                    MergeRanks   = build_merge_ranks(MergeList),
+                    ByteFallback = maps:get(<<"byte_fallback">>, Model, false),
+                    UnkToken     = maps:get(<<"unk_token">>, Model, null),
+                    UnkId        = case UnkToken of
+                                       null -> -1;
+                                       T    -> maps:get(T, Vocab, -1)
+                                   end,
+                    {PreTok, AddPrefix} = parse_pre_tokenizer_bpe(
+                                            maps:get(<<"pre_tokenizer">>, Json, null)),
+                    {BosId, EosId}      = parse_bos_eos(
+                                            maps:get(<<"post_processor">>, Json, null), Vocab),
+                    case parse_normalizer(maps:get(<<"normalizer">>, Json, null)) of
+                        {error, _} = Err -> Err;
+                        {ok, Norm}       ->
+                            {ok, #{
+                                type             => bpe,
+                                vocab            => Vocab,
+                                ids_to_tokens    => IdsToTokens,
+                                merges           => MergeRanks,
+                                special_tokens   => extract_special_tokens(Vocab),
+                                normalizer       => Norm,
+                                pre_tokenizer    => PreTok,
+                                add_prefix_space => AddPrefix,
+                                byte_fallback    => ByteFallback,
+                                max_length       => parse_max_length(Json),
+                                pad_id           => parse_pad_id(Json, Vocab),
+                                unk_id           => UnkId,
+                                bos_id           => BosId,
+                                eos_id           => EosId
+                            }}
+                    end
+            end
+    end.
+
+build_merge_ranks(MergeList) ->
+    maps:from_list([{Merge, Rank}
+                    || {Rank, Merge} <- lists:zip(
+                           lists:seq(0, length(MergeList) - 1), MergeList)]).
+
+parse_pre_tokenizer_bpe(null) ->
+    {bytelevel, false};
+parse_pre_tokenizer_bpe(#{<<"type">> := <<"ByteLevel">>} = P) ->
+    {bytelevel, maps:get(<<"add_prefix_space">>, P, false)};
+parse_pre_tokenizer_bpe(#{<<"type">> := <<"Metaspace">>} = P) ->
+    Default = case maps:is_key(<<"prepend_scheme">>, P) of
+                  true  -> true;
+                  false -> false
+              end,
+    AddPrefix = maps:get(<<"add_prefix_space">>, P, Default),
+    {metaspace, AddPrefix};
+parse_pre_tokenizer_bpe(_) ->
+    {bytelevel, false}.
+
+parse_bos_eos(null, _Vocab) ->
+    {none, none};
+parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
+                <<"single">> := Single}, Vocab) ->
+    Parts    = binary:split(Single, <<" ">>, [global]),
+    SpecToks = [strip_type_suffix(P) || P <- Parts, not is_seq_var(P)],
+    BosId    = case SpecToks of
+                   [First | _] -> maps:get(First, Vocab, none);
+                   []          -> none
+               end,
+    EosId    = case lists:reverse(SpecToks) of
+                   [Last | _] -> maps:get(Last, Vocab, none);
+                   []         -> none
+               end,
+    {BosId, EosId};
+parse_bos_eos(_, _Vocab) ->
+    {none, none}.
+
+is_seq_var(<<"$A", _/binary>>) -> true;
+is_seq_var(<<"$B", _/binary>>) -> true;
+is_seq_var(_)                  -> false.
+
+strip_type_suffix(Token) ->
+    case binary:split(Token, <<":">>) of
+        [T, _] -> T;
+        [T]    -> T
+    end.
+
 extract_special_tokens(Vocab) ->
     Keys = [<<"[PAD]">>, <<"[UNK]">>, <<"[CLS]">>, <<"[SEP]">>, <<"[MASK]">>],
     maps:filter(fun(K, _) -> lists:member(K, Keys) end, Vocab).
@@ -61,6 +152,12 @@ parse_normalizer(#{<<"type">> := <<"BertNormalizer">>} = N) ->
            handle_chinese_chars => maps:get(<<"handle_chinese_chars">>, N, false),
            strip_accents        => null_to_false(maps:get(<<"strip_accents">>, N, null)),
            lowercase            => maps:get(<<"lowercase">>,            N, false)}};
+parse_normalizer(#{<<"type">> := <<"NFC">>}) ->
+    {ok, #{clean_text => false, handle_chinese_chars => false,
+           strip_accents => false, lowercase => false}};
+parse_normalizer(#{<<"type">> := <<"Prepend">>}) ->
+    {ok, #{clean_text => false, handle_chinese_chars => false,
+           strip_accents => false, lowercase => false}};
 parse_normalizer(#{<<"type">> := T}) ->
     {error, {unsupported_normalizer, T}}.
 

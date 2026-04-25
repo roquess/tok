@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "truncation": {"direction": "Right", "strategy": "LongestFirst", "stride": 0, "max_length": 16},
+  "padding": {"pad_id": 0, "pad_token": "<unk>"},
+  "normalizer": null,
+  "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true, "prepend_scheme": "first"},
+  "post_processor": {
+    "type": "TemplateProcessing",
+    "single": "<s> $A </s>",
+    "pair": "<s> $A </s> $B </s>",
+    "special_tokens": {
+      "<s>":  {"id": 1, "ids": [1], "tokens": ["<s>"]},
+      "</s>": {"id": 2, "ids": [2], "tokens": ["</s>"]}
+    }
+  },
+  "model": {
+    "type": "BPE",
+    "vocab": {
+      "<unk>": 0, "<s>": 1, "</s>": 2,
+      "▁": 3, "H": 4, "e": 5, "l": 6, "o": 7,
+      "▁H": 8, "▁He": 9, "▁Hell": 10, "▁Hello": 11,
+      "<0x20>": 32
+    },
+    "merges": ["▁ H", "▁H e", "▁He ll", "▁Hell o"],
+    "unk_token": "<unk>",
+    "byte_fallback": true
+  }
+}
