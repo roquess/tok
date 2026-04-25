@@ -94,9 +94,17 @@ build_bpe(Json, Model) ->
     end.
 
 build_merge_ranks(MergeList) ->
-    maps:from_list([{Merge, Rank}
+    maps:from_list([{normalise_merge(Merge), Rank}
                     || {Rank, Merge} <- lists:zip(
                            lists:seq(0, length(MergeList) - 1), MergeList)]).
+
+%% Merges in tokenizer.json can be either a two-element array [A, B]
+%% or a single string "A B".  Normalise both to the binary "A B" form
+%% that tok_bpe:find_best_pair/2 uses as its lookup key.
+normalise_merge([A, B]) when is_binary(A), is_binary(B) ->
+    <<A/binary, " ", B/binary>>;
+normalise_merge(Merge) when is_binary(Merge) ->
+    Merge.
 
 parse_pre_tokenizer_bpe(null) ->
     {bytelevel, false};

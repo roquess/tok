@@ -20,7 +20,8 @@
          encode_bpe_bytelevel_integration/1,
          encode_bpe_metaspace_with_bos_eos/1,
          decode_bpe_bytelevel/1,
-         decode_bpe_metaspace/1]).
+         decode_bpe_metaspace/1,
+         fixture_replay_gpt2/1]).
 
 suite() -> [{timetrap, {seconds, 30}}].
 
@@ -44,7 +45,8 @@ all() -> [
     encode_bpe_bytelevel_integration,
     encode_bpe_metaspace_with_bos_eos,
     decode_bpe_bytelevel,
-    decode_bpe_metaspace
+    decode_bpe_metaspace,
+    fixture_replay_gpt2
 ].
 
 byte_to_unicode_space(_Config) ->
@@ -190,3 +192,20 @@ decode_bpe_metaspace(_Config) ->
     Tok = #{type => bpe, pre_tokenizer => metaspace,
             ids_to_tokens => IdsToTokens, special_tokens => #{}},
     <<"Hello world">> = tok:decode(Tok, [11, 20]).
+
+fixture_replay_gpt2(Config) ->
+    DataDir  = ?config(data_dir, Config),
+    TokPath  = filename:join([DataDir, "gpt2", "tokenizer.json"]),
+    CasePath = filename:join([DataDir, "gpt2", "wordpiece_cases.json"]),
+    {ok, Tok}   = tok:load(TokPath),
+    {ok, Bin}   = file:read_file(CasePath),
+    {ok, Cases} = thoas:decode(Bin),
+    lists:foreach(fun(Case) ->
+        Text     = maps:get(<<"text">>, Case),
+        Expected = maps:get(<<"input_ids">>, Case),
+        {IdsBin, _Mask, _Type} = tok:encode(Tok, Text),
+        Got = [Id || <<Id:32/signed-little>> <= IdsBin],
+        Got =:= Expected orelse
+            ct:fail("GPT-2 mismatch for ~p~nExpected first 10: ~p~nGot first 10:      ~p",
+                    [Text, lists:sublist(Expected, 10), lists:sublist(Got, 10)])
+    end, Cases).

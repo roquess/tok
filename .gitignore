@@ -1,3 +1,6 @@
 _build/
 erl_crash.dump
 test/tok_SUITE_data/bert-base-multilingual-cased/vocab.txt
+test/tok_bpe_SUITE_data/gpt2/vocab.json
+test/tok_bpe_SUITE_data/gpt2/merges.txt
+test/tok_bpe_SUITE_data/mistral/vocab.model
