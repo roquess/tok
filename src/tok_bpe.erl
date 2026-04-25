@@ -111,8 +111,8 @@ hex_digit(N) when N < 10 -> $0 + N;
 hex_digit(N)              -> $a + N - 10.
 
 %% Greedy BPE merge: find best pair (lowest rank), apply, repeat.
-bpe_merge(Tokens, _MergeRanks) when length(Tokens) =< 1 ->
-    Tokens;
+bpe_merge([], _MergeRanks) -> [];
+bpe_merge([_] = Tokens, _MergeRanks) -> Tokens;
 bpe_merge(Tokens, MergeRanks) ->
     case find_best_pair(Tokens, MergeRanks) of
         none         -> Tokens;
