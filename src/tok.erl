@@ -1,5 +1,5 @@
 -module(tok).
--export([load/1, encode/2, encode_batch/2, decode/2, vocab_size/1]).
+-export([load/1, encode/2, encode/3, encode_batch/2, decode/2, vocab_size/1, count_tokens/2]).
 -opaque tokenizer() :: map().
 -export_type([tokenizer/0]).
 
@@ -8,38 +8,19 @@ load(Path) -> tok_loader:load(Path).
 
 -spec encode(tokenizer(), binary()) ->
     {InputIds :: binary(), AttentionMask :: binary(), TokenTypeIds :: binary()}.
-encode(#{type := wordpiece,
-         vocab := Vocab, normalizer := Norm,
-         max_length := MaxLen, pad_id := PadId,
-         unk_id := UnkId, cls_id := ClsId, sep_id := SepId,
-         max_chars_per_word := MaxChars}, Text) ->
-    Normalized  = tok_normalizer:normalize(Norm, Text),
-    Words       = tok_wordpiece:pre_tokenize(Normalized),
-    ContentIds  = tok_wordpiece:encode_words(Words, Vocab, UnkId, MaxChars),
-    Truncated   = lists:sublist(ContentIds, MaxLen - 2),
-    AllIds      = [ClsId | Truncated] ++ [SepId],
-    build_output(AllIds, MaxLen, PadId);
-encode(#{type := bpe,
-         vocab := Vocab, merges := MergeRanks, normalizer := Norm,
-         pre_tokenizer := PreTok, add_prefix_space := AddPrefix,
-         byte_fallback := ByteFallback, max_length := MaxLen,
-         pad_id := PadId, unk_id := UnkId, bos_id := BosId, eos_id := EosId}, Text) ->
-    Normalized = tok_normalizer:normalize(Norm, Text),
-    PreTokSpec = case PreTok of
-                     bytelevel -> bytelevel;
-                     metaspace -> {metaspace, AddPrefix}
-                 end,
-    Words      = tok_bpe:pre_tokenize(PreTokSpec, Normalized),
-    RawIds     = lists:flatmap(
-                   fun(W) -> tok_bpe:encode_word(W, MergeRanks, Vocab, ByteFallback) end,
-                   Words),
-    ContentIds = [case Id of -1 -> UnkId; _ -> Id end || Id <- RawIds],
-    BosIds     = case BosId of none -> []; BosI -> [BosI] end,
-    EosIds     = case EosId of none -> []; EosI -> [EosI] end,
-    ExtraLen   = length(BosIds) + length(EosIds),
-    Truncated  = lists:sublist(ContentIds, MaxLen - ExtraLen),
-    AllIds     = BosIds ++ Truncated ++ EosIds,
-    build_output(AllIds, MaxLen, PadId).
+encode(Tok, Text) ->
+    encode(Tok, Text, #{}).
+
+-spec encode(tokenizer(), binary(), map()) ->
+    {InputIds :: binary(), AttentionMask :: binary(), TokenTypeIds :: binary()}.
+encode(Tok, Text, Opts) ->
+    AddSpecial = maps:get(add_special_tokens, Opts, true),
+    #{max_length := MaxLen, pad_id := PadId} = Tok,
+    build_output(tokenize(Tok, Text, AddSpecial), MaxLen, PadId).
+
+-spec count_tokens(tokenizer(), binary()) -> non_neg_integer().
+count_tokens(Tok, Text) ->
+    length(tokenize(Tok, Text, true)).
 
 -spec encode_batch(tokenizer(), [binary()]) -> [{binary(), binary(), binary()}].
 encode_batch(Tok, Texts) ->
@@ -76,6 +57,48 @@ decode(#{type := bpe, pre_tokenizer := metaspace,
 vocab_size(#{vocab := Vocab}) -> maps:size(Vocab).
 
 %% Internal
+
+tokenize(#{type := wordpiece,
+           vocab := Vocab, normalizer := Norm,
+           max_length := MaxLen, unk_id := UnkId,
+           cls_id := ClsId, sep_id := SepId,
+           max_chars_per_word := MaxChars}, Text, AddSpecial) ->
+    Normalized = tok_normalizer:normalize(Norm, Text),
+    Words      = tok_wordpiece:pre_tokenize(Normalized),
+    ContentIds = tok_wordpiece:encode_words(Words, Vocab, UnkId, MaxChars),
+    case AddSpecial of
+        true ->
+            Truncated = lists:sublist(ContentIds, MaxLen - 2),
+            [ClsId | Truncated] ++ [SepId];
+        false ->
+            lists:sublist(ContentIds, MaxLen)
+    end;
+
+tokenize(#{type := bpe,
+           vocab := Vocab, merges := MergeRanks, normalizer := Norm,
+           pre_tokenizer := PreTok, add_prefix_space := AddPrefix,
+           byte_fallback := ByteFallback, max_length := MaxLen,
+           unk_id := UnkId, bos_id := BosId, eos_id := EosId}, Text, AddSpecial) ->
+    Normalized = tok_normalizer:normalize(Norm, Text),
+    PreTokSpec = case PreTok of
+                     bytelevel -> bytelevel;
+                     metaspace -> {metaspace, AddPrefix}
+                 end,
+    Words      = tok_bpe:pre_tokenize(PreTokSpec, Normalized),
+    RawIds     = lists:flatmap(
+                   fun(W) -> tok_bpe:encode_word(W, MergeRanks, Vocab, ByteFallback) end,
+                   Words),
+    ContentIds = [case Id of -1 -> UnkId; _ -> Id end || Id <- RawIds],
+    case AddSpecial of
+        true ->
+            BosIds    = case BosId of none -> []; BosI -> [BosI] end,
+            EosIds    = case EosId of none -> []; EosI -> [EosI] end,
+            ExtraLen  = length(BosIds) + length(EosIds),
+            Truncated = lists:sublist(ContentIds, MaxLen - ExtraLen),
+            BosIds ++ Truncated ++ EosIds;
+        false ->
+            lists:sublist(ContentIds, MaxLen)
+    end.
 
 build_output(Ids, MaxLen, PadId) ->
     RealLen  = length(Ids),
