@@ -84,14 +84,17 @@ fixture_replay(Config) ->
 encode_no_special_tokens_wordpiece(Config) ->
     DataDir = ?config(data_dir, Config),
     {ok, Tok} = tok:load(filename:join(DataDir, "minimal_tokenizer.json")),
-    {IdsBin, MaskBin, _} = tok:encode(Tok, <<"hello world">>, #{add_special_tokens => false}),
-    Ids  = [Id  || <<Id:32/signed-little>>  <= IdsBin],
-    Mask = [M   || <<M:32/signed-little>>   <= MaskBin],
-    %% Without CLS/SEP: first real token is "hello" not [CLS]
-    %% Mask should have 1s for real tokens only
-    false = (hd(Ids) =:= 101),         %% 101 is [CLS] — must NOT be first
-    true  = (hd(Ids) =/= 0),           %% first token must be real
-    1     = hd(Mask).                  %% attention mask starts with 1
+    {IdsBin, MaskBin, TypeBin} = tok:encode(Tok, <<"hello world">>, #{add_special_tokens => false}),
+    %% max_length=8, no CLS/SEP: [hello=200, world=201, PAD*6]
+    <<200:32/signed-little, 201:32/signed-little,
+      0:32/signed-little,   0:32/signed-little,
+      0:32/signed-little,   0:32/signed-little,
+      0:32/signed-little,   0:32/signed-little>> = IdsBin,
+    <<1:32/signed-little,   1:32/signed-little,
+      0:32/signed-little,   0:32/signed-little,
+      0:32/signed-little,   0:32/signed-little,
+      0:32/signed-little,   0:32/signed-little>> = MaskBin,
+    TypeBin = binary:copy(<<0:32/signed-little>>, 8).
 
 encode_no_special_tokens_bpe(_Config) ->
     %% Build a minimal BPE tokenizer map directly (no file needed)

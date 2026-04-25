@@ -1,5 +1,5 @@
 -module(tok).
--export([load/1, encode/2, encode/3, encode_batch/2, decode/2, vocab_size/1, count_tokens/2]).
+-export([load/1, encode/2, encode/3, encode_batch/2, encode_batch/3, decode/2, vocab_size/1, count_tokens/2]).
 -opaque tokenizer() :: map().
 -export_type([tokenizer/0]).
 
@@ -11,7 +11,7 @@ load(Path) -> tok_loader:load(Path).
 encode(Tok, Text) ->
     encode(Tok, Text, #{}).
 
--spec encode(tokenizer(), binary(), map()) ->
+-spec encode(tokenizer(), binary(), #{add_special_tokens => boolean()}) ->
     {InputIds :: binary(), AttentionMask :: binary(), TokenTypeIds :: binary()}.
 encode(Tok, Text, Opts) ->
     AddSpecial = maps:get(add_special_tokens, Opts, true),
@@ -25,6 +25,11 @@ count_tokens(Tok, Text) ->
 -spec encode_batch(tokenizer(), [binary()]) -> [{binary(), binary(), binary()}].
 encode_batch(Tok, Texts) ->
     [encode(Tok, T) || T <- Texts].
+
+-spec encode_batch(tokenizer(), [binary()], #{add_special_tokens => boolean()}) ->
+    [{binary(), binary(), binary()}].
+encode_batch(Tok, Texts, Opts) ->
+    [encode(Tok, T, Opts) || T <- Texts].
 
 -spec decode(tokenizer(), [integer()]) -> binary().
 decode(#{type := wordpiece,
