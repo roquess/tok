@@ -123,7 +123,23 @@ parse_pre_tokenizer_bpe(_) ->
 parse_bos_eos(null, _Vocab) ->
     {none, none};
 parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
-                <<"single">> := Single}, Vocab) ->
+                <<"single">> := Single}, Vocab) when is_list(Single) ->
+    %% single is a list of maps like [{"SpecialToken": {"id": "<s>"}}, {"Sequence": ...}]
+    SpecToks = [maps:get(<<"id">>, ST, <<>>)
+                || Item <- Single,
+                   {ok, ST} <- [maps:find(<<"SpecialToken">>, Item)]],
+    BosId    = case SpecToks of
+                   [First | _] -> maps:get(First, Vocab, none);
+                   []          -> none
+               end,
+    EosId    = case length(SpecToks) >= 2 of
+                   true  -> maps:get(lists:last(SpecToks), Vocab, none);
+                   false -> none
+               end,
+    {BosId, EosId};
+parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
+                <<"single">> := Single}, Vocab) when is_binary(Single) ->
+    %% single is a string like "<s> $A </s>"
     Parts    = binary:split(Single, <<" ">>, [global]),
     SpecToks = [strip_type_suffix(P) || P <- Parts, not is_seq_var(P)],
     BosId    = case SpecToks of

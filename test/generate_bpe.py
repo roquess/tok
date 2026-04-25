@@ -40,3 +40,7 @@ def generate(model_id, out_dir, max_length=512):
 if __name__ == "__main__":
     base = os.path.join(os.path.dirname(__file__), "tok_bpe_SUITE_data")
     generate("gpt2", os.path.join(base, "gpt2"), max_length=512)
+    try:
+        generate("mistralai/Mistral-7B-v0.1", os.path.join(base, "mistral"), max_length=512)
+    except Exception:
+        generate("hf-internal-testing/llama-tokenizer", os.path.join(base, "mistral"), max_length=512)

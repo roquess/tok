@@ -21,7 +21,8 @@
          encode_bpe_metaspace_with_bos_eos/1,
          decode_bpe_bytelevel/1,
          decode_bpe_metaspace/1,
-         fixture_replay_gpt2/1]).
+         fixture_replay_gpt2/1,
+         fixture_replay_mistral/1]).
 
 suite() -> [{timetrap, {seconds, 30}}].
 
@@ -46,7 +47,8 @@ all() -> [
     encode_bpe_metaspace_with_bos_eos,
     decode_bpe_bytelevel,
     decode_bpe_metaspace,
-    fixture_replay_gpt2
+    fixture_replay_gpt2,
+    fixture_replay_mistral
 ].
 
 byte_to_unicode_space(_Config) ->
@@ -210,3 +212,25 @@ fixture_replay_gpt2(Config) ->
             ct:fail("GPT-2 mismatch for ~p~nExpected first 10: ~p~nGot first 10:      ~p",
                     [Text, lists:sublist(Expected, 10), lists:sublist(Got, 10)])
     end, Cases).
+
+fixture_replay_mistral(Config) ->
+    ct:timetrap({seconds, 120}),
+    DataDir  = ?config(data_dir, Config),
+    TokPath  = filename:join([DataDir, "mistral", "tokenizer.json"]),
+    CasePath = filename:join([DataDir, "mistral", "wordpiece_cases.json"]),
+    case filelib:is_regular(TokPath) of
+        false -> {skip, "mistral tokenizer not present"};
+        true  ->
+            {ok, Tok}   = tok:load(TokPath),
+            {ok, Bin}   = file:read_file(CasePath),
+            {ok, Cases} = thoas:decode(Bin),
+            lists:foreach(fun(Case) ->
+                Text     = maps:get(<<"text">>, Case),
+                Expected = maps:get(<<"input_ids">>, Case),
+                {IdsBin, _Mask, _Type} = tok:encode(Tok, Text),
+                Got = [Id || <<Id:32/signed-little>> <= IdsBin],
+                Got =:= Expected orelse
+                    ct:fail("Mistral mismatch for ~p~nExpected first 10: ~p~nGot first 10:      ~p",
+                            [Text, lists:sublist(Expected, 10), lists:sublist(Got, 10)])
+            end, Cases)
+    end.
