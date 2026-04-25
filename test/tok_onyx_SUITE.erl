@@ -8,6 +8,8 @@ suite() -> [{timetrap, {seconds, 30}}].
 all() -> [embedding_norm_is_one].
 
 init_per_suite(Config) ->
+    % Files expected in test/tok_onyx_SUITE_data/: model.onnx + tokenizer.json
+    % Obtain model: optimum-cli export onnx --model <model> model_onnx/
     DataDir   = ?config(data_dir, Config),
     ModelPath = filename:join(DataDir, "model.onnx"),
     TokPath   = filename:join(DataDir, "tokenizer.json"),
