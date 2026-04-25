@@ -167,11 +167,17 @@ encode_bpe_metaspace_with_bos_eos(_Config) ->
             pre_tokenizer => metaspace, add_prefix_space => true,
             byte_fallback => true, max_length => 8, pad_id => 0,
             unk_id => 0, bos_id => 1, eos_id => 2},
-    {IdsBin, _MaskBin, _TypeBin} = tok:encode(Tok, <<"Hello">>),
+    {IdsBin, MaskBin, TypeBin} = tok:encode(Tok, <<"Hello">>),
     %% Expected: [1(BOS), 11(▁Hello), 2(EOS), 0, 0, 0, 0, 0]
     <<1:32/signed-little, 11:32/signed-little, 2:32/signed-little,
       0:32/signed-little, 0:32/signed-little,  0:32/signed-little,
-      0:32/signed-little, 0:32/signed-little>>  = IdsBin.
+      0:32/signed-little, 0:32/signed-little>>  = IdsBin,
+    <<1:32/signed-little, 1:32/signed-little,  1:32/signed-little,
+      0:32/signed-little, 0:32/signed-little,  0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>>  = MaskBin,
+    <<0:32/signed-little, 0:32/signed-little,  0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little,  0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>>  = TypeBin.
 
 decode_bpe_bytelevel(_Config) ->
     IdsToTokens = #{8 => <<"Hello">>, 13 => <<"Ġworld"/utf8>>},

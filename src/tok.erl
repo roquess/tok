@@ -13,8 +13,6 @@ encode(#{type := wordpiece,
          max_length := MaxLen, pad_id := PadId,
          unk_id := UnkId, cls_id := ClsId, sep_id := SepId,
          max_chars_per_word := MaxChars}, Text) ->
-    % pre_tokenizer dispatch is not yet consulted — only BertPreTokenizer
-    % is supported; wire up whitespace/other dispatch when adding v0.2 BPE
     Normalized  = tok_normalizer:normalize(Norm, Text),
     Words       = tok_wordpiece:pre_tokenize(Normalized),
     ContentIds  = tok_wordpiece:encode_words(Words, Vocab, UnkId, MaxChars),
