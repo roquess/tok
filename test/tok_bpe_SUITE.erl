@@ -194,6 +194,7 @@ decode_bpe_metaspace(_Config) ->
     <<"Hello world">> = tok:decode(Tok, [11, 20]).
 
 fixture_replay_gpt2(Config) ->
+    ct:timetrap({seconds, 120}),
     DataDir  = ?config(data_dir, Config),
     TokPath  = filename:join([DataDir, "gpt2", "tokenizer.json"]),
     CasePath = filename:join([DataDir, "gpt2", "wordpiece_cases.json"]),

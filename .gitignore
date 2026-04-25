@@ -3,4 +3,8 @@ erl_crash.dump
 test/tok_SUITE_data/bert-base-multilingual-cased/vocab.txt
 test/tok_bpe_SUITE_data/gpt2/vocab.json
 test/tok_bpe_SUITE_data/gpt2/merges.txt
+test/tok_bpe_SUITE_data/gpt2/tokenizer_config.json
+test/tok_bpe_SUITE_data/gpt2/special_tokens_map.json
 test/tok_bpe_SUITE_data/mistral/vocab.model
+test/tok_bpe_SUITE_data/mistral/tokenizer_config.json
+test/tok_bpe_SUITE_data/mistral/special_tokens_map.json
