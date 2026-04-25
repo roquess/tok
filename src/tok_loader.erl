@@ -132,9 +132,9 @@ parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
                    [First | _] -> maps:get(First, Vocab, none);
                    []          -> none
                end,
-    EosId    = case length(SpecToks) >= 2 of
-                   true  -> maps:get(lists:last(SpecToks), Vocab, none);
-                   false -> none
+    EosId    = case SpecToks of
+                   [_, Last | _] -> maps:get(Last, Vocab, none);
+                   _             -> none
                end,
     {BosId, EosId};
 parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
@@ -146,9 +146,9 @@ parse_bos_eos(#{<<"type">>   := <<"TemplateProcessing">>,
                    [First | _] -> maps:get(First, Vocab, none);
                    []          -> none
                end,
-    EosId    = case length(SpecToks) >= 2 of
-                   true  -> maps:get(lists:last(SpecToks), Vocab, none);
-                   false -> none
+    EosId    = case SpecToks of
+                   [_, Last | _] -> maps:get(Last, Vocab, none);
+                   _             -> none
                end,
     {BosId, EosId};
 parse_bos_eos(_, _Vocab) ->
