@@ -77,6 +77,71 @@ bytelevel_decode(Bin) ->
     Chars = unicode:characters_to_list(Bin),
     list_to_binary([unicode_to_byte(C) || C <- Chars]).
 
-%% BPE merge: stub — Task 3 will implement this.
-encode_word(_Word, _MergeRanks, _Vocab, _ByteFallback) ->
-    error(not_implemented).
+%% Encode a single pre-tokenized word binary into a list of vocabulary IDs.
+encode_word(Word, MergeRanks, Vocab, ByteFallback) ->
+    case maps:find(Word, Vocab) of
+        {ok, ID} -> [ID];
+        error ->
+            InitTokens = word_to_initial_tokens(Word, Vocab, ByteFallback),
+            Merged     = bpe_merge(InitTokens, MergeRanks),
+            [maps:get(T, Vocab, -1) || T <- Merged]
+    end.
+
+%% Split a word into its initial character tokens.
+%% Unknown chars: if byte_fallback, emit <0xNN> per UTF-8 byte; else emit char as-is.
+word_to_initial_tokens(Word, Vocab, ByteFallback) ->
+    Chars = unicode:characters_to_list(Word),
+    lists:flatmap(fun(C) ->
+        ChBin = unicode:characters_to_binary([C]),
+        case maps:is_key(ChBin, Vocab) of
+            true                    -> [ChBin];
+            false when ByteFallback ->
+                [byte_token(B) || <<B>> <= ChBin];
+            false                   ->
+                [ChBin]
+        end
+    end, Chars).
+
+byte_token(B) ->
+    High = hex_digit(B bsr 4),
+    Low  = hex_digit(B band 15),
+    <<$<, $0, $x, High, Low, $>>>.
+
+hex_digit(N) when N < 10 -> $0 + N;
+hex_digit(N)              -> $a + N - 10.
+
+%% Greedy BPE merge: find best pair (lowest rank), apply, repeat.
+bpe_merge(Tokens, _MergeRanks) when length(Tokens) =< 1 ->
+    Tokens;
+bpe_merge(Tokens, MergeRanks) ->
+    case find_best_pair(Tokens, MergeRanks) of
+        none         -> Tokens;
+        {_R, {A, B}} -> bpe_merge(do_merge(Tokens, A, B), MergeRanks)
+    end.
+
+find_best_pair(Tokens, MergeRanks) ->
+    consecutive_pairs(Tokens, MergeRanks, none).
+
+consecutive_pairs([], _MergeRanks, Best) ->
+    Best;
+consecutive_pairs([_], _MergeRanks, Best) ->
+    Best;
+consecutive_pairs([A, B | Rest], MergeRanks, Best) ->
+    Key = <<A/binary, " ", B/binary>>,
+    NewBest = case maps:find(Key, MergeRanks) of
+        error      -> Best;
+        {ok, Rank} ->
+            case Best of
+                none                          -> {Rank, {A, B}};
+                {BestR, _} when Rank < BestR -> {Rank, {A, B}};
+                _                             -> Best
+            end
+    end,
+    consecutive_pairs([B | Rest], MergeRanks, NewBest).
+
+do_merge([], _A, _B) -> [];
+do_merge([_] = Ts, _A, _B) -> Ts;
+do_merge([A, B | Rest], A, B) ->
+    [<<A/binary, B/binary>> | do_merge(Rest, A, B)];
+do_merge([T | Rest], A, B) ->
+    [T | do_merge(Rest, A, B)].

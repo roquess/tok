@@ -12,7 +12,11 @@
          bytelevel_decode_basic/1,
          metaspace_hello_world/1,
          metaspace_add_prefix/1,
-         metaspace_empty/1]).
+         metaspace_empty/1,
+         encode_word_exact_match/1,
+         encode_word_merges_applied/1,
+         encode_word_byte_fallback/1,
+         encode_word_no_fallback_unk/1]).
 
 suite() -> [{timetrap, {seconds, 30}}].
 
@@ -28,7 +32,11 @@ all() -> [
     bytelevel_decode_basic,
     metaspace_hello_world,
     metaspace_add_prefix,
-    metaspace_empty
+    metaspace_empty,
+    encode_word_exact_match,
+    encode_word_merges_applied,
+    encode_word_byte_fallback,
+    encode_word_no_fallback_unk
 ].
 
 byte_to_unicode_space(_Config) ->
@@ -82,3 +90,29 @@ metaspace_add_prefix(_Config) ->
 
 metaspace_empty(_Config) ->
     [] = tok_bpe:pre_tokenize({metaspace, false}, <<>>).
+
+encode_word_exact_match(_Config) ->
+    Vocab  = #{<<"Hello">> => 13, <<"Gworld">> => 14},
+    Merges = #{},
+    [13] = tok_bpe:encode_word(<<"Hello">>, Merges, Vocab, false),
+    [14] = tok_bpe:encode_word(<<"Gworld">>, Merges, Vocab, false).
+
+encode_word_merges_applied(_Config) ->
+    %% "Hello" chars: H e l l o -> merge H+e -> He, l+l -> ll, He+ll -> Hell, Hell+o -> Hello
+    Vocab  = #{<<"H">> => 1, <<"e">> => 2, <<"l">> => 3, <<"o">> => 4,
+               <<"He">> => 5, <<"ll">> => 6, <<"Hell">> => 7, <<"Hello">> => 8},
+    Merges = #{<<"H e">> => 0, <<"l l">> => 1, <<"He ll">> => 2, <<"Hell o">> => 3},
+    [8] = tok_bpe:encode_word(<<"Hello">>, Merges, Vocab, false).
+
+encode_word_byte_fallback(_Config) ->
+    %% "€" is U+20AC, UTF-8 bytes: 0xE2 0x82 0xAC
+    %% With byte_fallback=true, unknown chars split into <0xNN> byte tokens
+    Vocab  = #{<<"<0xe2>">> => 1, <<"<0x82>">> => 2, <<"<0xac>">> => 3},
+    Merges = #{},
+    [1, 2, 3] = tok_bpe:encode_word(<<226, 130, 172>>, Merges, Vocab, true).
+
+encode_word_no_fallback_unk(_Config) ->
+    %% Unknown char with byte_fallback=false: use unk_id lookup (returns -1 sentinel)
+    Vocab  = #{<<"a">> => 1},
+    Merges = #{},
+    [-1] = tok_bpe:encode_word(<<"b">>, Merges, Vocab, false).
