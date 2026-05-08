@@ -10,14 +10,16 @@
          encode_no_special_tokens_wordpiece/1,
          encode_no_special_tokens_bpe/1,
          count_tokens_wordpiece/1,
-         count_tokens_truncation/1]).
+         count_tokens_truncation/1,
+         encode_unigram/1]).
 
 suite() -> [{timetrap, {seconds, 30}}].
 
 all() -> [encode_hello_world, encode_truncates, encode_batch,
           decode_removes_specials, vocab_size, fixture_replay,
           encode_no_special_tokens_wordpiece, encode_no_special_tokens_bpe,
-          count_tokens_wordpiece, count_tokens_truncation].
+          count_tokens_wordpiece, count_tokens_truncation,
+          encode_unigram].
 
 encode_hello_world(Config) ->
     DataDir = ?config(data_dir, Config),
@@ -142,3 +144,19 @@ count_tokens_truncation(_Config) ->
     %% "hello world foo bar baz" has 5 content tokens; max_length=4 means
     %% [CLS] + 2 content tokens + [SEP] = 4 real tokens
     4 = tok:count_tokens(Tok, <<"hello world foo bar baz">>).
+
+encode_unigram(Config) ->
+    DataDir = ?config(data_dir, Config),
+    {ok, Tok} = tok:load(filename:join(DataDir, "unigram_minimal.json")),
+    %% vocab: <unk>=0 <pad>=1 <s>=2 </s>=3 ▁hello=4 ▁world=5 ...
+    %% "hello world" → metaspace pre-tok → [▁hello, ▁world] → Viterbi → [4,5]
+    %% with BOS/EOS: [2,4,5,3] padded to max_length=8 with pad=1
+    {IdsBin, MaskBin, _TypeBin} = tok:encode(Tok, <<"hello world">>),
+    <<2:32/signed-little, 4:32/signed-little, 5:32/signed-little,
+      3:32/signed-little, 1:32/signed-little, 1:32/signed-little,
+      1:32/signed-little, 1:32/signed-little>> = IdsBin,
+    <<1:32/signed-little, 1:32/signed-little, 1:32/signed-little,
+      1:32/signed-little, 0:32/signed-little, 0:32/signed-little,
+      0:32/signed-little, 0:32/signed-little>> = MaskBin,
+    %% decode strips BOS/EOS specials and reconstructs the text
+    <<"hello world">> = tok:decode(Tok, [2, 4, 5, 3]).

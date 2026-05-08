@@ -56,6 +56,18 @@ decode(#{type := bpe, pre_tokenizer := metaspace,
     case Result of
         <<" ", Rest/binary>> -> Rest;
         _                    -> Result
+    end;
+
+decode(#{type := unigram,
+         ids_to_tokens := IdsToTokens, special_tokens := SpecialTokens}, Ids) ->
+    SpecialIds = sets:from_list(maps:values(SpecialTokens)),
+    Tokens  = [maps:get(Id, IdsToTokens, <<>>) || Id <- Ids,
+               not sets:is_element(Id, SpecialIds)],
+    Concat  = iolist_to_binary(Tokens),
+    Result  = binary:replace(Concat, <<"▁"/utf8>>, <<" ">>, [global]),
+    case Result of
+        <<" ", Rest/binary>> -> Rest;
+        _                    -> Result
     end.
 
 -spec vocab_size(tokenizer()) -> integer().
@@ -77,6 +89,27 @@ tokenize(#{type := wordpiece,
             [ClsId | Truncated] ++ [SepId];
         false ->
             lists:sublist(ContentIds, MaxLen)
+    end;
+
+tokenize(#{type := unigram,
+           vocab := Vocab, vocab_scores := VocabScores,
+           normalizer := Norm, pre_tokenizer := PreTok,
+           max_length := MaxLen, unk_id := _UnkId,
+           bos_id := BosId, eos_id := EosId}, Text, AddSpecial) ->
+    Normalized = tok_normalizer:normalize(Norm, Text),
+    Words      = tok_bpe:pre_tokenize(PreTok, Normalized),
+    RawIds     = lists:flatmap(
+                   fun(W) -> tok_unigram:encode(W, VocabScores, Vocab) end,
+                   Words),
+    case AddSpecial of
+        true ->
+            BosIds    = case BosId of none -> []; BosI -> [BosI] end,
+            EosIds    = case EosId of none -> []; EosI -> [EosI] end,
+            ExtraLen  = length(BosIds) + length(EosIds),
+            Truncated = lists:sublist(RawIds, MaxLen - ExtraLen),
+            BosIds ++ Truncated ++ EosIds;
+        false ->
+            lists:sublist(RawIds, MaxLen)
     end;
 
 tokenize(#{type := bpe,

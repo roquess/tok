@@ -1,0 +1,30 @@
+{
+  "model": {
+    "type": "Unigram",
+    "vocab": [
+      ["<unk>", 0.0],
+      ["<pad>", 0.0],
+      ["<s>", 0.0],
+      ["</s>", 0.0],
+      ["▁hello", -1.0],
+      ["▁world", -2.0],
+      ["▁h", -3.0],
+      ["ello", -4.0],
+      ["▁w", -5.0],
+      ["orld", -6.0]
+    ],
+    "unk_id": 0
+  },
+  "normalizer": {"type": "Precompiled"},
+  "pre_tokenizer": {"type": "Metaspace", "prepend_scheme": "first"},
+  "post_processor": {
+    "type": "TemplateProcessing",
+    "single": "<s> $A </s>",
+    "special_tokens": {
+      "<s>":   {"id": "<s>",   "ids": [2], "tokens": ["<s>"]},
+      "</s>":  {"id": "</s>",  "ids": [3], "tokens": ["</s>"]}
+    }
+  },
+  "truncation": {"max_length": 8},
+  "padding": {"pad_id": 1}
+}

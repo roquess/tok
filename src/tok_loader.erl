@@ -19,6 +19,7 @@ build(Json) ->
                 error                -> {error, {missing_field, <<"model.type">>}};
                 {ok, <<"WordPiece">>} -> build_wordpiece(Json, Model);
                 {ok, <<"BPE">>}      -> build_bpe(Json, Model);
+                {ok, <<"Unigram">>}  -> build_unigram(Json, Model);
                 {ok, T}              -> {error, {unsupported_tokenizer, T}}
             end
     end.
@@ -92,6 +93,56 @@ build_bpe(Json, Model) ->
                     end
             end
     end.
+
+build_unigram(Json, Model) ->
+    case maps:find(<<"vocab">>, Model) of
+        error ->
+            {error, {missing_field, <<"model.vocab">>}};
+        {ok, VocabList} ->
+            {Vocab, IdsToTokens, VocabScores} = build_unigram_vocab(VocabList),
+            UnkId        = maps:get(<<"unk_id">>, Model, 0),
+            PostProcessor = maps:get(<<"post_processor">>, Json, null),
+            {BosId, EosId} = parse_bos_eos(PostProcessor, Vocab),
+            PreTok = parse_pre_tokenizer_unigram(
+                         maps:get(<<"pre_tokenizer">>, Json, null)),
+            case parse_normalizer(maps:get(<<"normalizer">>, Json, null)) of
+                {error, _} = Err -> Err;
+                {ok, Norm} ->
+                    {ok, #{
+                        type           => unigram,
+                        vocab          => Vocab,
+                        ids_to_tokens  => IdsToTokens,
+                        vocab_scores   => VocabScores,
+                        special_tokens => extract_bpe_special_tokens(PostProcessor, Vocab),
+                        normalizer     => Norm,
+                        pre_tokenizer  => PreTok,
+                        unk_id         => UnkId,
+                        bos_id         => BosId,
+                        eos_id         => EosId,
+                        max_length     => parse_max_length(Json),
+                        pad_id         => parse_pad_id(Json, Vocab)
+                    }}
+            end
+    end.
+
+build_unigram_vocab(VocabList) ->
+    lists:foldl(fun([Tok, Score], {V, I, S}) ->
+        Id = maps:size(V),
+        {V#{Tok => Id}, I#{Id => Tok}, S#{Tok => Score}}
+    end, {#{}, #{}, #{}}, VocabList).
+
+parse_pre_tokenizer_unigram(#{<<"type">> := <<"Sequence">>,
+                               <<"pretokenizers">> := List}) ->
+    case [P || P <- List, maps:get(<<"type">>, P, null) =:= <<"Metaspace">>] of
+        [M | _] -> parse_pre_tokenizer_unigram(M);
+        []      -> {metaspace, true}
+    end;
+parse_pre_tokenizer_unigram(#{<<"type">> := <<"Metaspace">>} = P) ->
+    Scheme    = maps:get(<<"prepend_scheme">>, P, <<"first">>),
+    AddPrefix = Scheme =/= <<"never">>,
+    {metaspace, AddPrefix};
+parse_pre_tokenizer_unigram(_) ->
+    {metaspace, true}.
 
 build_merge_ranks(MergeList) ->
     maps:from_list([{normalise_merge(Merge), Rank}
@@ -188,6 +239,10 @@ parse_normalizer(#{<<"type">> := <<"NFC">>}) ->
     {ok, #{clean_text => false, handle_chinese_chars => false,
            strip_accents => false, lowercase => false}};
 parse_normalizer(#{<<"type">> := <<"Prepend">>}) ->
+    {ok, #{clean_text => false, handle_chinese_chars => false,
+           strip_accents => false, lowercase => false}};
+parse_normalizer(#{<<"type">> := <<"Precompiled">>}) ->
+    %% SentencePiece precompiled NFKC charsmap — treat as identity for clean input
     {ok, #{clean_text => false, handle_chinese_chars => false,
            strip_accents => false, lowercase => false}};
 parse_normalizer(#{<<"type">> := T}) ->
